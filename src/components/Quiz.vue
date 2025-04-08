@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useQuizStore } from '../stores/quizStore'
 import type { Category } from '../services/triviaService'
 
@@ -11,24 +11,61 @@ const amount = ref(10)
 const showMenu = ref(true)
 const showResultsModal = ref(false)
 const lastAnswer = ref<string | null>(null)
+const errorMessage = ref<string | null>(null)
+const isRetrying = ref(false)
 
 const difficulties = ['easy', 'medium', 'hard']
 const types = ['multiple', 'boolean']
 
+// Computed property para garantir que as respostas sejam sempre um array válido
+const currentAnswers = computed(() => {
+  if (!quizStore.currentQuestion) return []
+  
+  if (quizStore.currentQuestion.type === 'boolean') {
+    return ['True', 'False']
+  }
+  
+  return [
+    ...quizStore.currentQuestion.incorrect_answers,
+    quizStore.currentQuestion.correct_answer
+  ].sort(() => Math.random() - 0.5)
+})
+
 onMounted(async () => {
-  await quizStore.fetchCategories()
+  try {
+    await quizStore.fetchCategories()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Erro ao carregar categorias'
+  }
 })
 
 async function startQuiz() {
-  showMenu.value = false
-  showResultsModal.value = false
-  lastAnswer.value = null
-  await quizStore.fetchQuestions(
-    amount.value,
-    selectedCategory.value,
-    selectedDifficulty.value,
-    selectedType.value
-  )
+  try {
+    errorMessage.value = null
+    showMenu.value = false
+    showResultsModal.value = false
+    lastAnswer.value = null
+    
+    // Validação adicional para garantir que o tipo está correto
+    if (selectedType.value === 'boolean') {
+      selectedType.value = 'boolean'
+    }
+    
+    await quizStore.fetchQuestions(
+      amount.value,
+      selectedCategory.value,
+      selectedDifficulty.value,
+      selectedType.value
+    )
+    
+    // Validação após carregar as questões
+    if (!quizStore.currentQuestion) {
+      throw new Error('Não foi possível carregar as perguntas. Por favor, tente novamente.')
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Erro ao iniciar o quiz'
+    showMenu.value = true
+  }
 }
 
 function handleAnswer(answer: string) {
@@ -48,13 +85,24 @@ function resetToMenu() {
   showMenu.value = true
   showResultsModal.value = false
   lastAnswer.value = null
+  errorMessage.value = null
 }
 
-function restartQuiz() {
-  quizStore.resetQuiz()
-  showResultsModal.value = false
-  lastAnswer.value = null
-  startQuiz()
+async function restartQuiz() {
+  if (isRetrying.value) return
+  
+  try {
+    isRetrying.value = true
+    errorMessage.value = null
+    quizStore.resetQuiz()
+    showResultsModal.value = false
+    lastAnswer.value = null
+    await startQuiz()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Erro ao reiniciar o quiz'
+  } finally {
+    isRetrying.value = false
+  }
 }
 
 function calculateScore() {
@@ -81,6 +129,7 @@ function calculateScore() {
           max="50"
           class="form-control"
         />
+        <span class="input-help">Máximo de 50 perguntas permitidas</span>
       </div>
 
       <div class="form-group">
@@ -117,8 +166,12 @@ function calculateScore() {
         </select>
       </div>
 
-      <button @click="startQuiz" class="start-button" :disabled="quizStore.loading">
-        {{ quizStore.loading ? 'Carregando...' : 'Iniciar Quiz' }}
+      <button 
+        @click="startQuiz" 
+        class="start-button" 
+        :disabled="quizStore.loading || isRetrying"
+      >
+        {{ quizStore.loading || isRetrying ? 'Carregando...' : 'Iniciar Quiz' }}
       </button>
     </div>
 
@@ -140,10 +193,7 @@ function calculateScore() {
         
         <div class="answers">
           <button
-            v-for="(answer, index) in [
-              ...quizStore.currentQuestion.incorrect_answers,
-              quizStore.currentQuestion.correct_answer
-            ].sort(() => Math.random() - 0.5)"
+            v-for="(answer, index) in currentAnswers"
             :key="index"
             @click="handleAnswer(answer)"
             class="answer-button"
@@ -169,20 +219,20 @@ function calculateScore() {
           <p class="score-details">Você acertou {{ quizStore.score }} de {{ quizStore.totalQuestions }} perguntas</p>
         </div>
         <div class="result-actions">
-          <button @click="resetToMenu" class="menu-button">
+          <button @click="resetToMenu" class="menu-button" :disabled="isRetrying">
             <span class="button-icon">🏠</span>
             <span>Voltar ao Menu</span>
           </button>
-          <button @click="restartQuiz" class="restart-button">
+          <button @click="restartQuiz" class="restart-button" :disabled="isRetrying">
             <span class="button-icon">🔄</span>
-            <span>Jogar Novamente</span>
+            <span>{{ isRetrying ? 'Aguarde...' : 'Jogar Novamente' }}</span>
           </button>
         </div>
       </div>
     </div>
 
-    <div v-if="quizStore.error" class="error-message">
-      {{ quizStore.error }}
+    <div v-if="errorMessage" class="error-message">
+      {{ errorMessage }}
     </div>
   </div>
 </template>
@@ -302,10 +352,14 @@ function calculateScore() {
   padding: 1rem;
   border-radius: 8px;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
   transition: all 0.2s;
   color: var(--color-text);
   font-size: 1.1rem;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .answer-button:hover {
@@ -382,6 +436,14 @@ function calculateScore() {
   background: rgba(239, 68, 68, 0.1);
   border-radius: 8px;
   text-align: center;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.menu-button:disabled,
+.restart-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .modal-overlay {
@@ -447,5 +509,13 @@ function calculateScore() {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+.input-help {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
 }
 </style> 
