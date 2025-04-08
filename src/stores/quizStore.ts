@@ -22,7 +22,8 @@ export const useQuizStore = defineStore('quiz', () => {
       
       loading.value = true
       error.value = null
-      categories.value = await triviaService.getCategories()
+      const fetchedCategories = await triviaService.getCategories()
+      categories.value = fetchedCategories
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Erro ao carregar categorias'
       categories.value = []
@@ -42,7 +43,7 @@ export const useQuizStore = defineStore('quiz', () => {
       error.value = null
       const response = await triviaService.getQuestions(amount, category, difficulty, type)
       
-      if (!response.results || response.results.length === 0) {
+      if (response.response_code !== 0 || response.results.length === 0) {
         throw new Error('Não foi possível carregar as perguntas. Por favor, tente novamente.')
       }
 
@@ -63,7 +64,8 @@ export const useQuizStore = defineStore('quiz', () => {
       if (sessionToken.value) return // Evita requisições desnecessárias
       
       error.value = null
-      sessionToken.value = await triviaService.getSessionToken()
+      const token = await triviaService.getSessionToken()
+      sessionToken.value = token
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Erro ao obter token de sessão'
       sessionToken.value = null

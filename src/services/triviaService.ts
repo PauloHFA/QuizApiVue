@@ -77,7 +77,7 @@ function validateResponse(response: TriviaResponse) {
 }
 
 export const triviaService = {
-  async getQuestions(amount: number = 10, category?: number, difficulty?: string, type?: string) {
+  async getQuestions(amount: number = 10, category?: number, difficulty?: string, type?: string): Promise<TriviaResponse> {
     try {
       await waitForRateLimit()
       const params = new URLSearchParams()
@@ -91,20 +91,22 @@ export const triviaService = {
       return response.data
     } catch (error) {
       handleApiError(error, 'Erro ao buscar perguntas')
+      return { response_code: -1, results: [] } // Retorna um objeto vazio em caso de erro
     }
   },
 
-  async getCategories() {
+  async getCategories(): Promise<Category[]> {
     try {
       await waitForRateLimit()
       const response = await axios.get<{ trivia_categories: Category[] }>(`${BASE_URL}/api_category.php`)
       return response.data.trivia_categories
     } catch (error) {
       handleApiError(error, 'Erro ao buscar categorias')
+      return []
     }
   },
 
-  async getCategoryCount(categoryId: number) {
+  async getCategoryCount(categoryId: number): Promise<CategoryCount> {
     try {
       await waitForRateLimit()
       const response = await axios.get<{ category_question_count: CategoryCount }>(
@@ -113,6 +115,12 @@ export const triviaService = {
       return response.data.category_question_count
     } catch (error) {
       handleApiError(error, 'Erro ao buscar contagem da categoria')
+      return {
+        total_question_count: 0,
+        total_easy_question_count: 0,
+        total_medium_question_count: 0,
+        total_hard_question_count: 0
+      }
     }
   },
 
@@ -123,16 +131,18 @@ export const triviaService = {
       return response.data
     } catch (error) {
       handleApiError(error, 'Erro ao buscar contagem global')
+      return null
     }
   },
 
-  async getSessionToken() {
+  async getSessionToken(): Promise<string> {
     try {
       await waitForRateLimit()
       const response = await axios.get<{ token: string }>(`${BASE_URL}/api_token.php?command=request`)
       return response.data.token
     } catch (error) {
       handleApiError(error, 'Erro ao obter token de sessão')
+      throw error // Propaga o erro para ser tratado no store
     }
   },
 
@@ -143,6 +153,7 @@ export const triviaService = {
       return response.data
     } catch (error) {
       handleApiError(error, 'Erro ao resetar token de sessão')
+      throw error // Propaga o erro para ser tratado no store
     }
   }
 } 
