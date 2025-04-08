@@ -40,6 +40,42 @@ export interface CategoryCount {
   total_hard_question_count: number
 }
 
+// Função para tratar erros da API
+function handleApiError(error: unknown, customMessage?: string) {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status
+    if (status === 429) {
+      throw new Error('Por favor, aguarde alguns segundos antes de tentar novamente. A API tem um limite de requisições.')
+    }
+    if (status === 404) {
+      throw new Error('Recurso não encontrado. Por favor, verifique os parâmetros.')
+    }
+    if (status && status >= 500) {
+      throw new Error('Erro no servidor. Por favor, tente novamente mais tarde.')
+    }
+    throw new Error(error.response?.data?.message || customMessage || 'Erro ao fazer requisição para a API')
+  }
+  throw error
+}
+
+// Função para validar a resposta da API
+function validateResponse(response: TriviaResponse) {
+  switch (response.response_code) {
+    case 0:
+      return // Sucesso
+    case 1:
+      throw new Error('Não há perguntas suficientes para os critérios selecionados. Por favor, tente outros filtros.')
+    case 2:
+      throw new Error('Parâmetros inválidos fornecidos.')
+    case 3:
+      throw new Error('Token não encontrado.')
+    case 4:
+      throw new Error('Token expirado. Por favor, reinicie o quiz.')
+    default:
+      throw new Error('Erro desconhecido ao buscar perguntas.')
+  }
+}
+
 export const triviaService = {
   async getQuestions(amount: number = 10, category?: number, difficulty?: string, type?: string) {
     try {
@@ -51,12 +87,10 @@ export const triviaService = {
       if (type) params.append('type', type)
 
       const response = await axios.get<TriviaResponse>(`${BASE_URL}/api.php?${params.toString()}`)
+      validateResponse(response.data)
       return response.data
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 429) {
-        throw new Error('Por favor, aguarde alguns segundos antes de tentar novamente. A API tem um limite de requisições.')
-      }
-      throw error
+      handleApiError(error, 'Erro ao buscar perguntas')
     }
   },
 
@@ -66,10 +100,7 @@ export const triviaService = {
       const response = await axios.get<{ trivia_categories: Category[] }>(`${BASE_URL}/api_category.php`)
       return response.data.trivia_categories
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 429) {
-        throw new Error('Por favor, aguarde alguns segundos antes de tentar novamente. A API tem um limite de requisições.')
-      }
-      throw error
+      handleApiError(error, 'Erro ao buscar categorias')
     }
   },
 
@@ -81,10 +112,7 @@ export const triviaService = {
       )
       return response.data.category_question_count
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 429) {
-        throw new Error('Por favor, aguarde alguns segundos antes de tentar novamente. A API tem um limite de requisições.')
-      }
-      throw error
+      handleApiError(error, 'Erro ao buscar contagem da categoria')
     }
   },
 
@@ -94,23 +122,17 @@ export const triviaService = {
       const response = await axios.get(`${BASE_URL}/api_count_global.php`)
       return response.data
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 429) {
-        throw new Error('Por favor, aguarde alguns segundos antes de tentar novamente. A API tem um limite de requisições.')
-      }
-      throw error
+      handleApiError(error, 'Erro ao buscar contagem global')
     }
   },
 
   async getSessionToken() {
     try {
       await waitForRateLimit()
-      const response = await axios.get(`${BASE_URL}/api_token.php?command=request`)
+      const response = await axios.get<{ token: string }>(`${BASE_URL}/api_token.php?command=request`)
       return response.data.token
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 429) {
-        throw new Error('Por favor, aguarde alguns segundos antes de tentar novamente. A API tem um limite de requisições.')
-      }
-      throw error
+      handleApiError(error, 'Erro ao obter token de sessão')
     }
   },
 
@@ -120,10 +142,7 @@ export const triviaService = {
       const response = await axios.get(`${BASE_URL}/api_token.php?command=reset&token=${token}`)
       return response.data
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 429) {
-        throw new Error('Por favor, aguarde alguns segundos antes de tentar novamente. A API tem um limite de requisições.')
-      }
-      throw error
+      handleApiError(error, 'Erro ao resetar token de sessão')
     }
   }
 } 
